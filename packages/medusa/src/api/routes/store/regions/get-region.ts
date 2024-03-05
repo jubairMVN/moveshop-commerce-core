@@ -1,5 +1,6 @@
 import RegionService from "../../../../services/region"
 import { FindParams } from "../../../../types/common"
+import { ICacheService } from "@medusajs/types"
 
 /**
  * @oas [get] /store/regions/{id}
@@ -71,10 +72,18 @@ import { FindParams } from "../../../../types/common"
 export default async (req, res) => {
   const { region_id } = req.params
   const regionService: RegionService = req.scope.resolve("regionService")
+  const redisService: ICacheService = req.scope.resolve("cacheService");
 
-  const region = await regionService.retrieve(region_id, req.retrieveConfig)
+  const cacheKey = `region:${region_id}`;
 
-  res.json({ region })
+  let region = await redisService.get(cacheKey);
+
+  if (!region) {
+    region = await regionService.retrieve(region_id, req.retrieveConfig);
+    await redisService.set(cacheKey, region);
+  }
+
+  res.json({ region });
 }
 
 export class StoreGetRegionsRegionParams extends FindParams {}

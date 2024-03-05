@@ -6,6 +6,7 @@ import {
   DateComparisonOperator,
   extendedFindParamsMixin,
 } from "../../../../types/common"
+import { ICacheService } from "@medusajs/types"
 
 /**
  * @oas [get] /store/regions
@@ -128,14 +129,24 @@ import {
  */
 export default async (req, res) => {
   const regionService: RegionService = req.scope.resolve("regionService")
+  const redisService :ICacheService = req.scope.resolve("cacheService")
   const { limit, offset } = req.validatedQuery
 
-  const [regions, count] = await regionService.listAndCount(
-    req.filterableFields,
-    req.listConfig
-  )
+  const cacheKey = `regions:${limit}:${offset}`;
+  let cachedData = await redisService.get(cacheKey)
 
-  res.json({ regions, count, limit, offset })
+  if (!cachedData) {
+    const [regions, count] = await regionService.listAndCount(
+      req.filterableFields,
+      req.listConfig
+    )
+
+    await redisService.set(cacheKey, { regions, count, limit, offset })
+
+    cachedData = { regions, count, limit, offset }
+  }
+
+  res.json(cachedData)
 }
 
 export class StoreGetRegionsParams extends extendedFindParamsMixin({
