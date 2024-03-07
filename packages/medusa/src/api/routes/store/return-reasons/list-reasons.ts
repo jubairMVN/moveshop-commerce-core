@@ -3,6 +3,7 @@ import {
   defaultStoreReturnReasonRelations,
 } from "."
 import ReturnReasonService from "../../../../services/return-reason"
+import { ICacheService } from "@medusajs/types"
 
 /**
  * @oas [get] /store/return-reasons
@@ -75,16 +76,28 @@ import ReturnReasonService from "../../../../services/return-reason"
  *     $ref: "#/components/responses/500_error"
  */
 export default async (req, res) => {
-  const returnReasonService: ReturnReasonService = req.scope.resolve(
-    "returnReasonService"
-  )
+  const cacheService: ICacheService = req.scope.resolve("cacheService");
 
-  const query = { parent_return_reason_id: null }
+  const cacheKey = `return_reasons:${req.hostname}${req.originalUrl}`;
 
-  const return_reasons = await returnReasonService.list(query, {
-    select: defaultStoreReturnReasonFields,
-    relations: defaultStoreReturnReasonRelations,
-  })
+  let cachedData = await cacheService.get(cacheKey);
 
-  res.status(200).json({ return_reasons })
-}
+  if (!cachedData) {
+    const returnReasonService: ReturnReasonService = req.scope.resolve(
+      "returnReasonService"
+    );
+
+    const query = { parent_return_reason_id: null };
+    const return_reasons = await returnReasonService.list(query, {
+      select: defaultStoreReturnReasonFields,
+      relations: defaultStoreReturnReasonRelations,
+    });
+
+    await cacheService.set(cacheKey, return_reasons);
+
+    cachedData = return_reasons;
+  }
+
+  res.status(200).json({ return_reasons: cachedData });
+};
+

@@ -6,20 +6,24 @@ import { ReturnReasonRepository } from "../repositories/return-reason"
 import { FindConfig, Selector } from "../types/common"
 import { CreateReturnReason, UpdateReturnReason } from "../types/return-reason"
 import { buildQuery } from "../utils"
+import { ICacheService } from "@medusajs/types"
 
 type InjectedDependencies = {
   manager: EntityManager
   returnReasonRepository: typeof ReturnReasonRepository
+  cacheService: ICacheService;
 }
 
 class ReturnReasonService extends TransactionBaseService {
   protected readonly retReasonRepo_: typeof ReturnReasonRepository
+  protected readonly cacheService_: ICacheService;
 
-  constructor({ returnReasonRepository }: InjectedDependencies) {
+  constructor({ returnReasonRepository, cacheService }: InjectedDependencies) {
     // eslint-disable-next-line prefer-rest-params
     super(arguments[0])
 
     this.retReasonRepo_ = returnReasonRepository
+    this.cacheService_ = cacheService;
   }
 
   async create(data: CreateReturnReason): Promise<ReturnReason | never> {
@@ -38,8 +42,11 @@ class ReturnReasonService extends TransactionBaseService {
       }
 
       const created = rrRepo.create(data)
+      const savedReason = await rrRepo.save(created);
+      const cacheKey = `return_reason:${savedReason.id}`;
+      await this.cacheService_.set(cacheKey, savedReason);
 
-      return await rrRepo.save(created)
+      return savedReason;
     })
   }
 
@@ -94,11 +101,19 @@ class ReturnReasonService extends TransactionBaseService {
         `"returnReasonId" must be defined`
       )
     }
+    const cacheKey = `return_reason:${returnReasonId}`;
+
+    let cachedReason = await this.cacheService_.get<ReturnReason>(cacheKey);
+    if (cachedReason) {
+      console.log("cached data")
+      return cachedReason;
+    }
 
     const rrRepo = this.activeManager_.withRepository(this.retReasonRepo_)
 
     const query = buildQuery({ id: returnReasonId }, config)
     const item = await rrRepo.findOne(query)
+    console.log("not cached data")
 
     if (!item) {
       throw new MedusaError(
